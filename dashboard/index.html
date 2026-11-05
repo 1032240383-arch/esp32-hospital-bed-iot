@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Healthcare Bed Monitor</title>
+  <!-- MQTT.js pinned to 4.3.7 -->
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --bg-main: #0b0f19;
+      --bg-card: #162032;
+      --bg-card-sub: #1e293b;
+      --border-color: #334155;
+      --border-accent: #475569;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --color-green: #10b981;
+      --color-amber: #f59e0b;
+      --color-red: #ef4444;
+      --color-cyan: #38bdf8;
+      --color-blue: #3b82f6;
+      --radius: 12px;
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 12px 8px 32px 8px;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Header & Connection Status */
+    .header {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #fff;
+    }
+
+    .brand-icon {
+      color: var(--color-cyan);
+    }
+
+    .pills-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-online {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--color-green);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .pill-offline {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--color-red);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+    }
+
+    .pill-warn {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--color-amber);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+    }
+
+    .pill-connecting {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--color-amber);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .pill-broker {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--color-cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .device-info {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Offline Alert Banner */
+    .offline-banner {
+      background: linear-gradient(135deg, #b91c1c, #dc2626);
+      color: #ffffff;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      font-weight: 700;
+      font-size: 0.88rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      animation: pulseAlert 2s infinite ease-in-out;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    @keyframes pulseAlert {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.92; transform: scale(0.99); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Tab Navigation */
+    .tab-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 10px 12px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .tab-btn.active {
+      background: var(--color-blue);
+      color: #ffffff;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+
+    /* Card Panels */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Gauge Grid */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .gauge-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .gauge-card {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border-accent);
+      border-radius: 10px;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+    }
+
+    .gauge-card-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .gauge-svg {
+      width: 100%;
+      max-width: 135px;
+      height: 78px;
+      overflow: visible;
+    }
+
+    .gauge-readout {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #fff;
+      margin-top: -2px;
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+
+    .gauge-readout-unit {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .gauge-sub-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+
+    /* Status Badges */
+    .badge-normal {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--color-green);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .badge-warn {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--color-amber);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .badge-crit {
+      background: rgba(239, 68, 68, 0.25);
+      color: var(--color-red);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+    }
+
+    /* Dual Stats Row (BP + ECG) */
+    .dual-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-box {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border-accent);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .stat-val-large {
+      font-size: 1.18rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .stat-unit {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+
+    /* ECG Animation Container */
+    .ecg-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .ecg-svg {
+      width: 100%;
+      height: 24px;
+      stroke: var(--color-green);
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Interactive Controls & Sliders */
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    .control-label {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .control-val {
+      font-weight: 700;
+      color: var(--color-cyan);
+      font-size: 0.95rem;
+    }
+
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--color-cyan);
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    input[type=range]::-webkit-slider-thumb:active {
+      transform: scale(1.18);
+    }
+
+    input[type=range]::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--color-cyan);
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      cursor: pointer;
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+
+    /* Buttons & Presets */
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border-accent);
+      color: var(--text-main);
+      padding: 9px 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .btn:hover {
+      background: #273549;
+      border-color: #64748b;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-danger {
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+
+    .btn-toggle-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: var(--bg-card-sub);
+      padding: 3px;
+      border-radius: 8px;
+    }
+
+    .btn-toggle {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 7px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-toggle.active {
+      background: var(--color-blue);
+      color: #fff;
+    }
+
+    /* Medication Critical Confirm Button */
+    .btn-confirm {
+      width: 100%;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: #ffffff;
+      border: 2px solid #f87171;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(220, 38, 38, 0.5);
+      animation: pulseAlert 1.5s infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-confirm:active {
+      transform: scale(0.98);
+    }
+
+    /* Aggregate Summary Table */
+    .agg-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin-top: 4px;
+    }
+
+    .agg-table th {
+      text-align: left;
+      padding: 6px 4px;
+      color: var(--text-dim);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-accent);
+      text-transform: uppercase;
+      font-size: 0.68rem;
+    }
+
+    .agg-table td {
+      padding: 7px 4px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      color: var(--text-main);
+    }
+
+    .agg-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .agg-meta {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Alert Feed List */
+    .alert-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .alert-item {
+      background: var(--bg-card-sub);
+      border-left: 3px solid var(--border-color);
+      border-radius: 4px 8px 8px 4px;
+      padding: 8px 10px;
+      font-size: 0.78rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .alert-item.crit {
+      border-left-color: var(--color-red);
+      background: rgba(239, 68, 68, 0.12);
+    }
+
+    .alert-item.warn {
+      border-left-color: var(--color-amber);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .alert-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .alert-time {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .alert-text {
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .no-alerts {
+      text-align: center;
+      padding: 16px;
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      font-style: italic;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  
+  <!-- Top Offline Banner -->
+  <div id="offline-banner" class="offline-banner hidden">
+    <span>⚠️</span>
+    <span>DEVICE OFFLINE - Connection to Bed 01 Lost</span>
+  </div>
+
+  <!-- Header Card -->
+  <header class="header">
+    <div class="header-top">
+      <div class="brand">
+        <span class="brand-icon">✚</span>
+        <span>Ward A • Bed 01</span>
+      </div>
+      <div class="pills-row">
+        <span id="conn-pill" class="pill pill-connecting">DEVICE: WAIT</span>
+        <span id="broker-pill" class="pill pill-broker">MQTT: INIT</span>
+        <span id="lastUpdate" class="pill" style="background:#1e293b;color:var(--text-muted);border:1px solid #334155;">Last: --</span>
+      </div>
+    </div>
+    <div class="device-info">
+      <span>Topic: <code id="disp-topic" style="color: var(--color-cyan);">hospital/ward_A/bed_01</code></span>
+      <span id="disp-clock">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- Dual Tab Selector -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-med" onclick="switchTab('med')">
+      <span>🩺</span> Medical Staff
+    </button>
+    <button class="tab-btn" id="tab-btn-fac" onclick="switchTab('fac')">
+      <span>🏢</span> Facility Mgmt
+    </button>
+  </nav>
+
+  <!-- =============================================================== -->
+  <!-- TAB 1: MEDICAL STAFF DASHBOARD                                  -->
+  <!-- =============================================================== -->
+  <main id="tab-content-med" style="display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- 1. Patient Vitals Gauges -->
+    <section class="card">
+      <div class="card-title">
+        <span>Patient Vital Signs</span>
+        <span style="font-size:0.7rem; color:var(--text-dim);">Live Telemetry</span>
+      </div>
+
+      <div class="gauge-grid-3">
+        <!-- HR Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">Heart Rate</div>
+          <svg id="svg-hr" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-hr">--</span>
+            <span class="gauge-readout-unit">bpm</span>
+          </div>
+          <div id="badge-hr" class="gauge-sub-badge badge-normal">NORMAL</div>
+        </div>
+
+        <!-- SpO2 Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">SpO2</div>
+          <svg id="svg-spo2" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-spo2">--</span>
+            <span class="gauge-readout-unit">%</span>
+          </div>
+          <div id="badge-spo2" class="gauge-sub-badge badge-normal">NORMAL</div>
+        </div>
+
+        <!-- Body Temp Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">Body Temp</div>
+          <svg id="svg-btemp" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-btemp">--</span>
+            <span class="gauge-readout-unit">°C</span>
+          </div>
+          <div id="badge-btemp" class="gauge-sub-badge badge-normal">NORMAL</div>
+        </div>
+      </div>
+
+      <!-- BP & ECG Dual Row -->
+      <div class="dual-stats">
+        <div class="stat-box">
+          <div class="stat-label">Blood Pressure</div>
+          <div class="stat-val-large">
+            <span id="val-bp">--- / ---</span>
+            <span class="stat-unit">mmHg</span>
+          </div>
+          <div id="badge-bp" style="font-size:0.68rem; color:var(--text-muted);">Resting Profile</div>
+        </div>
+
+        <div class="stat-box">
+          <div class="stat-label">ECG Rhythm</div>
+          <div class="stat-val-large" style="font-size: 1.0rem;">
+            <span id="val-ecg-rhythm">Sinus</span>
+          </div>
+          <div class="ecg-container">
+            <svg class="ecg-svg" viewBox="0 0 160 26">
+              <path d="M0,13 L35,13 L42,6 L48,20 L54,13 L65,13 L70,22 L75,2 L82,24 L87,13 L105,13 L112,8 L118,13 L160,13" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Smart Medication Dosage Control -->
+    <section class="card">
+      <div class="card-title">
+        <span>Medication Infusion Control</span>
+        <span id="med-badge" class="pill badge-normal">NORMAL</span>
+      </div>
+
+      <div class="control-row">
+        <div>
+          <span class="control-label">Current Infusion Rate:</span>
+          <div style="font-size: 1.25rem; font-weight: 800; color:#fff;">
+            <span id="med-rate-display">0.0</span> <span style="font-size: 0.8rem; color: var(--text-muted);">mg/hr</span>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <span class="control-label">Total Delivered:</span>
+          <div style="font-size: 1.25rem; font-weight: 800; color: var(--color-cyan);">
+            <span id="med-delivered-display">0.00</span> <span style="font-size: 0.8rem; color: var(--text-muted);">mg</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Confirm Button (Only shown when pending confirmation) -->
+      <button id="btn-med-confirm" class="btn-confirm hidden" onclick="confirmMedication()">
+        <span>⚠️</span> CONFIRM CRITICAL INFUSION (>80 mg/hr)
+      </button>
+
+      <!-- Dosage Rate Slider (0 - 100 mg/hr) -->
+      <div class="slider-container">
+        <div class="control-row">
+          <span style="font-size:0.78rem; color:var(--text-muted);">Adjust Rate Target:</span>
+          <span id="med-slider-label" class="control-val">0 mg/hr</span>
+        </div>
+        <input type="range" id="slider-med-rate" min="0" max="100" step="1" value="0">
+        <div class="slider-labels">
+          <span>0 mg/h (Off)</span>
+          <span style="color:var(--color-amber);">50 (Warn)</span>
+          <span style="color:var(--color-red);">80 (Confirm Required)</span>
+          <span>100 mg/h</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Bed Elevation Control -->
+    <section class="card">
+      <div class="card-title">
+        <span>Bed Elevation Control</span>
+        <span style="font-size:0.75rem; color:var(--color-cyan);" id="bed-angle-display">0°</span>
+      </div>
+
+      <!-- Bed Angle Slider (0 - 90 deg) -->
+      <div class="slider-container">
+        <div class="control-row">
+          <span style="font-size:0.78rem; color:var(--text-muted);">Angle Adjustment:</span>
+          <span id="bed-slider-label" class="control-val">0°</span>
+        </div>
+        <input type="range" id="slider-bed-angle" min="0" max="90" step="1" value="0">
+        <div class="slider-labels">
+          <span>0° (Flat / CPR)</span>
+          <span>30°</span>
+          <span>60°</span>
+          <span>90° (Vertical)</span>
+        </div>
+      </div>
+
+      <!-- Bed Presets -->
+      <div class="btn-grid">
+        <button class="btn" onclick="sendBedPreset('SLEEP')">🛌 Sleep (10°)</button>
+        <button class="btn" onclick="sendBedPreset('EAT')">🥣 Eat (30°)</button>
+        <button class="btn" onclick="sendBedPreset('BREATHE')">🫁 Breathe (45°)</button>
+        <button class="btn btn-danger" onclick="sendBedPreset('EMERGENCY')">🚨 Emergency (90°)</button>
+      </div>
+    </section>
+
+    <!-- 4. Dynamic Sampling Rate -->
+    <section class="card">
+      <div class="card-title">
+        <span>Adaptive Sampling Frequency</span>
+        <span id="sampling-info-badge" class="pill pill-broker">5s (AUTO)</span>
+      </div>
+
+      <div class="control-row">
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Sampling Mode:</span>
+        <div class="btn-toggle-group">
+          <button class="btn-toggle active" id="btn-mode-auto" onclick="setSamplingMode('auto')">Auto</button>
+          <button class="btn-toggle" id="btn-mode-manual" onclick="setSamplingMode('manual')">Manual</button>
+        </div>
+      </div>
+
+      <!-- Sampling Slider (5 - 60s) -->
+      <div class="slider-container">
+        <div class="control-row">
+          <span style="font-size:0.78rem; color:var(--text-muted);">Manual Interval:</span>
+          <span id="sampling-slider-label" class="control-val">5s</span>
+        </div>
+        <input type="range" id="slider-sampling-rate" min="5" max="60" step="1" value="5">
+        <div class="slider-labels">
+          <span>5s (Fast)</span>
+          <span>15s (Nominal)</span>
+          <span>30s</span>
+          <span>60s (Slow)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. 30s Rolling Aggregate Panel -->
+    <section class="card">
+      <div class="card-title">
+        <span>Medical Aggregate (Last 30s)</span>
+        <span id="med-agg-meta" class="agg-meta">Waiting data...</span>
+      </div>
+      <table class="agg-table">
+        <thead>
+          <tr>
+            <th>Vital Sign</th>
+            <th>Min</th>
+            <th>Avg</th>
+            <th>Max</th>
+          </tr>
+        </thead>
+        <tbody id="med-agg-body">
+          <tr><td>Heart Rate</td><td id="agg-hr-min">--</td><td id="agg-hr-avg">--</td><td id="agg-hr-max">--</td></tr>
+          <tr><td>SpO2</td><td id="agg-spo2-min">--</td><td id="agg-spo2-avg">--</td><td id="agg-spo2-max">--</td></tr>
+          <tr><td>Body Temp</td><td id="agg-temp-min">--</td><td id="agg-temp-avg">--</td><td id="agg-temp-max">--</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 6. Live Alerts Feed -->
+    <section class="card">
+      <div class="card-title">
+        <span>Live Clinical Alert Feed</span>
+        <span style="font-size:0.7rem; color:var(--text-dim);">Last 10 Events</span>
+      </div>
+      <div id="med-alerts-list" class="alert-feed">
+        <div class="no-alerts">No clinical alerts recorded yet.</div>
+      </div>
+    </section>
+
+    <!-- Safe Operating Thresholds Legend (keep in sync with src/config.h) -->
+    <section class="card" style="margin-top: 10px;">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📋</span> Safe Operating Thresholds Legend
+        </div>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); line-height: 1.6; display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding-top:4px;">
+        <div><strong>Heart Rate:</strong> Safe 50-120 bpm | Warn 40-50 / 120-150 | Crit &lt;40 / &ge;150</div>
+        <div><strong>SpO2:</strong> Normal &ge;94% | Warn 90-94% | Crit &lt;90% (Auto Bed 45°)</div>
+        <div><strong>Body Temp:</strong> Normal &lt;38.0°C | Fever &ge;38.0°C | Crit &ge;39.5°C</div>
+        <div><strong>Blood Pressure:</strong> Normal &lt;130/85 | Pre-HTN &ge;130/85 | Stage 2 &ge;140/90</div>
+        <div><strong>Room Temp:</strong> Normal &le;30.0°C | High &gt;30.0°C</div>
+        <div><strong>Room O2:</strong> Optimal &ge;19.5% | Low Warning &lt;19.5%</div>
+        <div><strong>AQI:</strong> Good 0-50 | Moderate 51-100 | Unhealthy &gt;100</div>
+        <div><strong>Medication:</strong> Normal 0-50 mg/h | Warn 50-80 | Crit &gt;80 (Confirm req.)</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =============================================================== -->
+  <!-- TAB 2: FACILITY MANAGEMENT DASHBOARD                            -->
+  <!-- =============================================================== -->
+  <main id="tab-content-fac" style="display: none; flex-direction: column; gap: 14px;">
+
+    <!-- 1. Room Environmental Gauges -->
+    <section class="card">
+      <div class="card-title">
+        <span>Room Environmental Telemetry</span>
+        <span style="font-size:0.7rem; color:var(--text-dim);">Ward A Sensors</span>
+      </div>
+
+      <div class="gauge-grid-3">
+        <!-- Room Temp Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">Room Temp</div>
+          <svg id="svg-rtemp" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-rtemp">--</span>
+            <span class="gauge-readout-unit">°C</span>
+          </div>
+          <div id="badge-rtemp" class="gauge-sub-badge badge-normal">NOMINAL</div>
+        </div>
+
+        <!-- Room O2 Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">Oxygen Level</div>
+          <svg id="svg-o2" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-o2">--</span>
+            <span class="gauge-readout-unit">%</span>
+          </div>
+          <div id="badge-o2" class="gauge-sub-badge badge-normal">NOMINAL</div>
+        </div>
+
+        <!-- AQI Gauge -->
+        <div class="gauge-card">
+          <div class="gauge-card-title">Air Quality</div>
+          <svg id="svg-aqi" class="gauge-svg" viewBox="0 0 200 115"></svg>
+          <div class="gauge-readout">
+            <span id="val-aqi">--</span>
+            <span class="gauge-readout-unit">AQI</span>
+          </div>
+          <div id="badge-aqi" class="gauge-sub-badge badge-normal">GOOD</div>
+        </div>
+      </div>
+
+      <!-- Humidity & Bed Angle Readouts -->
+      <div class="dual-stats">
+        <div class="stat-box">
+          <div class="stat-label">Relative Humidity</div>
+          <div class="stat-val-large">
+            <span id="val-humidity">--</span>
+            <span class="stat-unit">%</span>
+          </div>
+          <div style="font-size:0.68rem; color:var(--text-muted);">DHT22 Ambient Sensor</div>
+        </div>
+
+        <div class="stat-box">
+          <div class="stat-label">Current Bed Angle</div>
+          <div class="stat-val-large">
+            <span id="val-fac-bed">0</span>
+            <span class="stat-unit">deg</span>
+          </div>
+          <div id="val-fac-preset" style="font-size:0.68rem; color:var(--text-muted);">Servo Position</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Facility Aggregate Panel -->
+    <section class="card">
+      <div class="card-title">
+        <span>Facility Aggregate (Last 30s)</span>
+        <span id="fac-agg-meta" class="agg-meta">Waiting data...</span>
+      </div>
+      <table class="agg-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Min</th>
+            <th>Avg</th>
+            <th>Max</th>
+          </tr>
+        </thead>
+        <tbody id="fac-agg-body">
+          <tr><td>Room Temp</td><td id="agg-rtemp-min">--</td><td id="agg-rtemp-avg">--</td><td id="agg-rtemp-max">--</td></tr>
+          <tr><td>Humidity</td><td id="agg-hum-min">--</td><td id="agg-hum-avg">--</td><td id="agg-hum-max">--</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. Facility Alerts Feed -->
+    <section class="card">
+      <div class="card-title">
+        <span>Facility Alert Feed</span>
+        <span style="font-size:0.7rem; color:var(--text-dim);">Last 10 Events</span>
+      </div>
+      <div id="fac-alerts-list" class="alert-feed">
+        <div class="no-alerts">No environmental alerts recorded yet.</div>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<script>
+  // ─────────────────────────────────────────────────────────────────────────
+  //  CONFIG & CONSTANTS (Must match config.h exactly)
+  // ─────────────────────────────────────────────────────────────────────────
+  // Thresholds: keep in sync with src/config.h
+  const urlParams = new URLSearchParams(window.location.search);
+  const TOPIC_PREFIX = urlParams.get('prefix') || 'hospital_parth_bed01_2026/ward_A/bed_01';
+  const dispTopicEl = document.getElementById('disp-topic');
+  if (dispTopicEl) dispTopicEl.textContent = TOPIC_PREFIX;
+
+  // Thresholds from config.h:
+  // HR: warn low 50, warn high 120, crit low 40, crit high 150
+  // SpO2: warn low 94, crit low 90
+  // Body temp: warn high 38, crit high 39.5
+  // Room temp: warn high 30
+  // O2: warn low 19.5
+  // AQI: warn high 100
+  // Med rate: warn 50, crit 80
+
+  const GAUGE_CONFIGS = {
+    hr: {
+      svgId: "svg-hr",
+      valId: "val-hr",
+      badgeId: "badge-hr",
+      min: 30,
+      max: 180,
+      unit: "bpm",
+      zones: [
+        { from: 30,  to: 40,  color: "var(--color-red)",   label: "CRIT LOW" },
+        { from: 40,  to: 50,  color: "var(--color-amber)", label: "WARN LOW" },
+        { from: 50,  to: 120, color: "var(--color-green)", label: "NORMAL" },
+        { from: 120, to: 150, color: "var(--color-amber)", label: "WARN HIGH" },
+        { from: 150, to: 180, color: "var(--color-red)",   label: "CRIT HIGH" }
+      ]
+    },
+    spo2: {
+      svgId: "svg-spo2",
+      valId: "val-spo2",
+      badgeId: "badge-spo2",
+      min: 70,
+      max: 100,
+      unit: "%",
+      zones: [
+        { from: 70, to: 90,  color: "var(--color-red)",   label: "CRIT LOW" },
+        { from: 90, to: 94,  color: "var(--color-amber)", label: "WARN LOW" },
+        { from: 94, to: 100, color: "var(--color-green)", label: "NORMAL" }
+      ]
+    },
+    btemp: {
+      svgId: "svg-btemp",
+      valId: "val-btemp",
+      badgeId: "badge-btemp",
+      min: 34,
+      max: 42,
+      unit: "°C",
+      zones: [
+        { from: 34,   to: 35,   color: "var(--color-amber)", label: "LOW" },
+        { from: 35,   to: 38,   color: "var(--color-green)", label: "NORMAL" },
+        { from: 38,   to: 39.5, color: "var(--color-amber)", label: "FEVER" },
+        { from: 39.5, to: 42,   color: "var(--color-red)",   label: "CRITICAL" }
+      ]
+    },
+    rtemp: {
+      svgId: "svg-rtemp",
+      valId: "val-rtemp",
+      badgeId: "badge-rtemp",
+      min: 15,
+      max: 40,
+      unit: "°C",
+      zones: [
+        { from: 15, to: 30, color: "var(--color-green)", label: "NOMINAL" },
+        { from: 30, to: 40, color: "var(--color-amber)", label: "HIGH" }
+      ]
+    },
+    o2: {
+      svgId: "svg-o2",
+      valId: "val-o2",
+      badgeId: "badge-o2",
+      min: 16,
+      max: 24,
+      unit: "%",
+      zones: [
+        { from: 16,   to: 19.5, color: "var(--color-red)",   label: "LOW O2" },
+        { from: 19.5, to: 20.5, color: "var(--color-amber)", label: "MODERATE" },
+        { from: 20.5, to: 24,   color: "var(--color-green)", label: "OPTIMAL" }
+      ]
+    },
+    aqi: {
+      svgId: "svg-aqi",
+      valId: "val-aqi",
+      badgeId: "badge-aqi",
+      min: 0,
+      max: 150,
+      unit: "AQI",
+      zones: [
+        { from: 0,   to: 50,  color: "var(--color-green)", label: "GOOD" },
+        { from: 50,  to: 100, color: "var(--color-amber)", label: "MODERATE" },
+        { from: 100, to: 150, color: "var(--color-red)",   label: "UNHEALTHY" }
+      ]
+    }
+  };
+
+  // State Variables
+  let currentMedRate = 0.0;
+  let isMedPending = false;
+  let isUserInteractingMed = false;
+  let isUserInteractingBed = false;
+  let activeTab = 'med';
+  let lastMsgTime = Date.now();
+  let currentSamplingMs = 15000;
+  const medAlerts = [];
+  const facAlerts = [];
+
+  function showToast(msg, isError = false) {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.style.borderColor = isError ? 'var(--color-red)' : 'var(--color-amber)';
+    toast.style.color = isError ? '#fca5a5' : '#fde68a';
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 4000);
+  }
+
+  // Live "Last update: Ns ago" timer
+  setInterval(() => {
+    const s = Math.round((Date.now() - lastMsgTime) / 1000);
+    const el = document.getElementById('lastUpdate');
+    if (el) el.textContent = `Last: ${s}s ago`;
+  }, 1000);
+
+  // Stale data watchdog (fires if no message in max(2*sampling, 40s))
+  setInterval(() => {
+    const elapsed = Date.now() - lastMsgTime;
+    const staleThreshold = Math.max(2 * currentSamplingMs, 40000);
+    if (elapsed > staleThreshold) {
+      const offlineBan = document.getElementById('offline-banner');
+      const connPill = document.getElementById('conn-pill');
+      if (offlineBan) offlineBan.classList.remove('hidden');
+      if (connPill) {
+        connPill.textContent = "DEVICE: STALE";
+        connPill.className = "pill pill-offline";
+      }
+    }
+  }, 5000);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  SVG SEMICIRCLE GAUGE GENERATOR
+  // ─────────────────────────────────────────────────────────────────────────
+  const CX = 100;
+  const CY = 85;
+  const RADIUS = 68;
+  const NEEDLE_LEN = 54;
+
+  function polarToCartesian(f) {
+    const angleRad = Math.PI * (1.0 - f);
+    return {
+      x: (CX + RADIUS * Math.cos(angleRad)).toFixed(2),
+      y: (CY - RADIUS * Math.sin(angleRad)).toFixed(2)
+    };
+  }
+
+  function polarNeedle(f) {
+    const angleRad = Math.PI * (1.0 - f);
+    return {
+      x: (CX + NEEDLE_LEN * Math.cos(angleRad)).toFixed(2),
+      y: (CY - NEEDLE_LEN * Math.sin(angleRad)).toFixed(2)
+    };
+  }
+
+  function initGaugeSVG(key) {
+    const cfg = GAUGE_CONFIGS[key];
+    const svg = document.getElementById(cfg.svgId);
+    if (!svg) return;
+
+    let html = '';
+    // Background arc track
+    const pStart = polarToCartesian(0);
+    const pEnd = polarToCartesian(1);
+    html += `<path d="M ${pStart.x} ${pStart.y} A ${RADIUS} ${RADIUS} 0 0 1 ${pEnd.x} ${pEnd.y}" 
+                   stroke="#1e293b" stroke-width="12" fill="none" stroke-linecap="round" />`;
+
+    // Zone colored arcs
+    const range = cfg.max - cfg.min;
+    cfg.zones.forEach((z) => {
+      const f1 = Math.max(0, Math.min(1, (z.from - cfg.min) / range));
+      const f2 = Math.max(0, Math.min(1, (z.to - cfg.min) / range));
+      if (f2 > f1) {
+        const pt1 = polarToCartesian(f1);
+        const pt2 = polarToCartesian(f2);
+        html += `<path d="M ${pt1.x} ${pt1.y} A ${RADIUS} ${RADIUS} 0 0 1 ${pt2.x} ${pt2.y}" 
+                       stroke="${z.color}" stroke-width="10" fill="none" stroke-opacity="0.9" />`;
+      }
+    });
+
+    // Needle & Pivot Cap
+    const nStart = polarNeedle(0);
+    html += `<line id="needle-${key}" x1="${CX}" y1="${CY}" x2="${nStart.x}" y2="${nStart.y}" 
+                   stroke="#f8fafc" stroke-width="3" stroke-linecap="round" />`;
+    html += `<circle cx="${CX}" cy="${CY}" r="6" fill="#38bdf8" stroke="#0f172a" stroke-width="2" />`;
+
+    svg.innerHTML = html;
+  }
+
+  function updateGauge(key, val) {
+    const cfg = GAUGE_CONFIGS[key];
+    if (!cfg) return;
+
+    const numVal = parseFloat(val);
+    if (isNaN(numVal)) return;
+
+    // Update readout text
+    const dispEl = document.getElementById(cfg.valId);
+    if (dispEl) {
+      dispEl.textContent = (key === 'aqi' || key === 'hr') ? Math.round(numVal) : numVal.toFixed(1);
+    }
+
+    // Clamp fraction
+    const frac = Math.max(0, Math.min(1, (numVal - cfg.min) / (cfg.max - cfg.min)));
+    const nPt = polarNeedle(frac);
+    const needle = document.getElementById(`needle-${key}`);
+    if (needle) {
+      needle.setAttribute("x2", nPt.x);
+      needle.setAttribute("y2", nPt.y);
+    }
+
+    // Update badge status
+    let activeZone = cfg.zones[cfg.zones.length - 1];
+    for (let i = 0; i < cfg.zones.length; i++) {
+      if (numVal <= cfg.zones[i].to) {
+        activeZone = cfg.zones[i];
+        break;
+      }
+    }
+
+    const badge = document.getElementById(cfg.badgeId);
+    if (badge) {
+      badge.textContent = activeZone.label;
+      if (activeZone.color.includes("red")) {
+        badge.className = "gauge-sub-badge badge-crit";
+      } else if (activeZone.color.includes("amber")) {
+        badge.className = "gauge-sub-badge badge-warn";
+      } else {
+        badge.className = "gauge-sub-badge badge-normal";
+      }
+    }
+  }
+
+  // Initialize all SVG gauges
+  Object.keys(GAUGE_CONFIGS).forEach(initGaugeSVG);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  UI INTERACTION & TAB SWITCHING
+  // ─────────────────────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    activeTab = tab;
+    const medBtn = document.getElementById('tab-btn-med');
+    const facBtn = document.getElementById('tab-btn-fac');
+    const medContent = document.getElementById('tab-content-med');
+    const facContent = document.getElementById('tab-content-fac');
+
+    if (tab === 'med') {
+      medBtn.classList.add('active');
+      facBtn.classList.remove('active');
+      medContent.style.display = 'flex';
+      facContent.style.display = 'none';
+    } else {
+      facBtn.classList.add('active');
+      medBtn.classList.remove('active');
+      facContent.style.display = 'flex';
+      medContent.style.display = 'none';
+    }
+  }
+
+  // Update live clock
+  setInterval(() => {
+    const now = new Date();
+    document.getElementById('disp-clock').textContent = now.toTimeString().split(' ')[0];
+  }, 1000);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  MQTT CONNECTION SETUP
+  // ─────────────────────────────────────────────────────────────────────────
+  const brokerPill = document.getElementById('broker-pill');
+  const connPill   = document.getElementById('conn-pill');
+  const offlineBan = document.getElementById('offline-banner');
+
+  brokerPill.textContent = "MQTT: CONNECTING...";
+
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+    clientId: 'dashboard_' + Math.random().toString(16).substr(2, 8),
+    clean: true,
+    reconnectPeriod: 5000,
+  });
+
+  client.on('connect', () => {
+    brokerPill.textContent = "MQTT: CONNECTED";
+    brokerPill.className = "pill pill-online";
+
+    // Subscribe to required topics
+    const subTopics = [
+      `${TOPIC_PREFIX}/medical/#`,
+      `${TOPIC_PREFIX}/facility/#`,
+      `${TOPIC_PREFIX}/status`,
+      `${TOPIC_PREFIX}/medical/medication_status`
+    ];
+
+    client.subscribe(subTopics, (err) => {
+      if (!err) {
+        console.log("Subscribed successfully to all topics");
+      } else {
+        console.error("Subscription error:", err);
+      }
+    });
+  });
+
+  client.on('reconnect', () => {
+    brokerPill.textContent = "MQTT: RECONNECTING";
+    brokerPill.className = "pill pill-connecting";
+  });
+
+  client.on('offline', () => {
+    brokerPill.textContent = "MQTT: OFFLINE";
+    brokerPill.className = "pill pill-offline";
+  });
+
+  client.on('error', (err) => {
+    console.error("MQTT Error:", err);
+    brokerPill.textContent = "MQTT: ERROR";
+    brokerPill.className = "pill pill-offline";
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  MQTT INCOMING MESSAGE DISPATCHER
+  // ─────────────────────────────────────────────────────────────────────────
+  client.on('message', (topic, message) => {
+    lastMsgTime = Date.now();
+    const payloadStr = message.toString();
+
+    // 1. Connection LWT & Status
+    if (topic === `${TOPIC_PREFIX}/status`) {
+      handleStatusMessage(payloadStr);
+      return;
+    }
+
+    // 2. Medication Status & Confirmation
+    if (topic === `${TOPIC_PREFIX}/medical/medication_status`) {
+      handleMedicationStatus(payloadStr);
+      return;
+    }
+
+    // 3. Medical Topics
+    if (topic === `${TOPIC_PREFIX}/medical/heartrate`) {
+      updateGauge('hr', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/spo2`) {
+      updateGauge('spo2', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/bodytemp`) {
+      updateGauge('btemp', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/bp`) {
+      handleBpMessage(payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/ecg`) {
+      handleEcgMessage(payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/alerts`) {
+      addAlert(medAlerts, 'med-alerts-list', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/medical/aggregate`) {
+      handleMedAggregate(payloadStr);
+    }
+
+    // 4. Facility Topics
+    else if (topic === `${TOPIC_PREFIX}/facility/roomtemp`) {
+      updateGauge('rtemp', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/facility/oxygen`) {
+      try {
+        const d = JSON.parse(payloadStr);
+        updateGauge('o2', d.o2_pct !== undefined ? d.o2_pct : d);
+      } catch (e) {
+        updateGauge('o2', payloadStr);
+      }
+    } else if (topic === `${TOPIC_PREFIX}/facility/aqi`) {
+      try {
+        const d = JSON.parse(payloadStr);
+        updateGauge('aqi', d.aqi !== undefined ? d.aqi : d);
+      } catch (e) {
+        updateGauge('aqi', payloadStr);
+      }
+    } else if (topic === `${TOPIC_PREFIX}/facility/humidity`) {
+      const hVal = parseFloat(payloadStr);
+      if (!isNaN(hVal)) {
+        document.getElementById('val-humidity').textContent = hVal.toFixed(1);
+      }
+    } else if (topic === `${TOPIC_PREFIX}/facility/bed_angle`) {
+      handleBedMessage(payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/facility/alerts`) {
+      addAlert(facAlerts, 'fac-alerts-list', payloadStr);
+    } else if (topic === `${TOPIC_PREFIX}/facility/aggregate`) {
+      handleFacAggregate(payloadStr);
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  MESSAGE PARSERS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function handleStatusMessage(str) {
+    try {
+      const data = JSON.parse(str);
+      const st = data.state || data.conn;
+
+      if (st === "OFFLINE") {
+        offlineBan.classList.remove('hidden');
+        connPill.textContent = "DEVICE: OFFLINE";
+        connPill.className = "pill pill-offline";
+      } else if (st === "DEGRADED") {
+        offlineBan.classList.add('hidden');
+        connPill.textContent = "DEVICE: DEGRADED";
+        connPill.className = "pill pill-warn";
+      } else {
+        offlineBan.classList.add('hidden');
+        connPill.textContent = "DEVICE: ONLINE";
+        connPill.className = "pill pill-online";
+      }
+
+      // Sync status values if available
+      if (data.med_rate !== undefined) {
+        setMedRateDisplay(data.med_rate);
+      }
+      if (data.med_dose !== undefined) {
+        document.getElementById('med-delivered-display').textContent = parseFloat(data.med_dose).toFixed(2);
+      }
+      if (data.bed_angle !== undefined) {
+        setBedAngleDisplay(data.bed_angle);
+      }
+      if (data.sampling_ms !== undefined) {
+        currentSamplingMs = parseInt(data.sampling_ms) || 15000;
+        const sec = Math.round(currentSamplingMs / 1000);
+        document.getElementById('sampling-info-badge').textContent = `${sec}s`;
+      }
+    } catch (e) {
+      if (str.includes("OFFLINE")) {
+        offlineBan.classList.remove('hidden');
+        connPill.textContent = "DEVICE: OFFLINE";
+        connPill.className = "pill pill-offline";
+      } else if (str.includes("ONLINE")) {
+        offlineBan.classList.add('hidden');
+        connPill.textContent = "DEVICE: ONLINE";
+        connPill.className = "pill pill-online";
+      }
+    }
+  }
+
+  function handleBpMessage(str) {
+    try {
+      const bp = JSON.parse(str);
+      if (bp.systolic !== undefined && bp.diastolic !== undefined) {
+        document.getElementById('val-bp').textContent = `${bp.systolic} / ${bp.diastolic}`;
+        const badge = document.getElementById('badge-bp');
+        if (bp.systolic >= 140 || bp.diastolic >= 90) {
+          badge.textContent = "Stage 2 High";
+          badge.style.color = "var(--color-red)";
+        } else if (bp.systolic >= 130 || bp.diastolic >= 85) {
+          badge.textContent = "Prehypertension";
+          badge.style.color = "var(--color-amber)";
+        } else {
+          badge.textContent = "Normotensive";
+          badge.style.color = "var(--color-green)";
+        }
+      }
+    } catch (e) {
+      document.getElementById('val-bp').textContent = str;
+    }
+  }
+
+  function handleEcgMessage(str) {
+    try {
+      const ecg = JSON.parse(str);
+      const rhythmEl = document.getElementById('val-ecg-rhythm');
+      if (ecg.rhythm) {
+        rhythmEl.textContent = ecg.rhythm;
+        if (ecg.rhythm.toLowerCase().includes("arrhythm") || ecg.rhythm.toLowerCase().includes("tach")) {
+          rhythmEl.style.color = "var(--color-red)";
+        } else {
+          rhythmEl.style.color = "var(--color-green)";
+        }
+      }
+    } catch (e) {
+      document.getElementById('val-ecg-rhythm').textContent = str;
+    }
+  }
+
+  function handleBedMessage(str) {
+    try {
+      const d = JSON.parse(str);
+      const angle = d.angle !== undefined ? d.angle : d;
+      setBedAngleDisplay(angle);
+
+      const presetMap = { 0: "EMERGENCY / CPR", 1: "SLEEP (10°)", 2: "EAT (30°)", 3: "BREATHE (45°)", 4: "CPR (0°)" };
+      const pName = presetMap[d.preset] || "Manual Position";
+      const facPresetEl = document.getElementById('val-fac-preset');
+      if (facPresetEl) facPresetEl.textContent = pName;
+    } catch (e) {
+      const angle = parseInt(str);
+      if (!isNaN(angle)) setBedAngleDisplay(angle);
+    }
+  }
+
+  function setBedAngleDisplay(angle) {
+    document.getElementById('bed-angle-display').textContent = `${angle}°`;
+    document.getElementById('val-fac-bed').textContent = angle;
+  }
+
+  function handleMedicationStatus(str) {
+    try {
+      const d = JSON.parse(str);
+      const confirmBtn = document.getElementById('btn-med-confirm');
+
+      // 1. Pending confirmation detection
+      if (d.status === "PENDING_CONFIRMATION" || (d.message && d.message.toLowerCase().includes("pending")) || (d.pending !== undefined && parseFloat(d.pending) > 0)) {
+        isMedPending = true;
+        if (confirmBtn) confirmBtn.classList.remove('hidden');
+        if (d.requested_rate !== undefined && !isUserInteractingMed) {
+          medSlider.value = d.requested_rate;
+          medSliderLabel.textContent = `${d.requested_rate} mg/hr (PENDING)`;
+        }
+      } else if (d.status === "CONFIRMED") {
+        isMedPending = false;
+        if (confirmBtn) confirmBtn.classList.add('hidden');
+        showToast("High dosage rate confirmed and active", false);
+      } else if (d.status === "CANCELLED" || (d.pending === 0 && d.rate !== undefined && d.rate <= 80 && !isMedPending)) {
+        isMedPending = false;
+        if (confirmBtn) confirmBtn.classList.add('hidden');
+      }
+
+      // 2. Notifications & Toast messages
+      if (d.status === "CLAMPED") {
+        showToast(d.message || "Requested rate clamped to safe step jump (+20 mg/hr)", false);
+        const m = d.message ? d.message.match(/applied=([0-9.]+)/) : null;
+        if (m) {
+          const appliedVal = parseFloat(m[1]);
+          setMedRateDisplay(appliedVal);
+          if (!isUserInteractingMed && !isMedPending) {
+            medSlider.value = appliedVal;
+            medSliderLabel.textContent = `${appliedVal} mg/hr`;
+          }
+        }
+      } else if (d.status === "REJECTED_OUT_OF_RANGE") {
+        showToast(d.message || "Rejected: Dosage rate out of range (0-100 mg/hr)", true);
+        if (!isUserInteractingMed) {
+          medSlider.value = currentMedRate;
+          medSliderLabel.textContent = `${currentMedRate} mg/hr`;
+        }
+      }
+
+      // 3. Update rate & delivered dose if present in payload (do not overwrite slider if pending confirmation or user dragging)
+      if (d.rate !== undefined) {
+        setMedRateDisplay(d.rate);
+        if (!isUserInteractingMed && !isMedPending) {
+          medSlider.value = d.rate;
+          medSliderLabel.textContent = `${d.rate} mg/hr`;
+        }
+      }
+      if (d.delivered_mg !== undefined) {
+        const delEl = document.getElementById('med-delivered-display');
+        if (delEl) delEl.textContent = parseFloat(d.delivered_mg).toFixed(2);
+      }
+      if (d.safety) {
+        const badge = document.getElementById('med-badge');
+        if (badge) {
+          badge.textContent = d.safety;
+          badge.className = (d.safety === "CRITICAL") ? "pill badge-crit" :
+                            (d.safety === "WARNING")  ? "pill badge-warn" : "pill badge-normal";
+        }
+      }
+    } catch (e) {
+      console.warn("Could not parse medication status JSON:", str);
+    }
+  }
+
+  function setMedRateDisplay(rate) {
+    currentMedRate = parseFloat(rate);
+    document.getElementById('med-rate-display').textContent = currentMedRate.toFixed(1);
+
+    const badge = document.getElementById('med-badge');
+    if (currentMedRate > 80.0) {
+      badge.textContent = "CRITICAL";
+      badge.className = "pill badge-crit";
+    } else if (currentMedRate > 50.0) {
+      badge.textContent = "WARNING";
+      badge.className = "pill badge-warn";
+    } else {
+      badge.textContent = "NORMAL";
+      badge.className = "pill badge-normal";
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  AGGREGATE PANELS
+  // ─────────────────────────────────────────────────────────────────────────
+  function handleMedAggregate(str) {
+    try {
+      const agg = JSON.parse(str);
+      document.getElementById('med-agg-meta').textContent = 
+        `Window: ${agg.window_sec || 30}s | Samples: ${agg.samples || 0}`;
+
+      if (agg.heartRate) {
+        document.getElementById('agg-hr-min').textContent = agg.heartRate.min + " bpm";
+        document.getElementById('agg-hr-avg').textContent = agg.heartRate.avg + " bpm";
+        document.getElementById('agg-hr-max').textContent = agg.heartRate.max + " bpm";
+      }
+      if (agg.spo2) {
+        document.getElementById('agg-spo2-min').textContent = agg.spo2.min + "%";
+        document.getElementById('agg-spo2-avg').textContent = agg.spo2.avg + "%";
+        document.getElementById('agg-spo2-max').textContent = agg.spo2.max + "%";
+      }
+      if (agg.bodyTemp) {
+        document.getElementById('agg-temp-min').textContent = agg.bodyTemp.min + "°C";
+        document.getElementById('agg-temp-avg').textContent = agg.bodyTemp.avg + "°C";
+        document.getElementById('agg-temp-max').textContent = agg.bodyTemp.max + "°C";
+      }
+    } catch (e) {
+      console.warn("Error parsing medical aggregate:", e);
+    }
+  }
+
+  function handleFacAggregate(str) {
+    try {
+      const agg = JSON.parse(str);
+      document.getElementById('fac-agg-meta').textContent = 
+        `Window: ${agg.window_sec || 30}s | Samples: ${agg.samples || 0}`;
+
+      if (agg.roomTemp) {
+        document.getElementById('agg-rtemp-min').textContent = agg.roomTemp.min + "°C";
+        document.getElementById('agg-rtemp-avg').textContent = agg.roomTemp.avg + "°C";
+        document.getElementById('agg-rtemp-max').textContent = agg.roomTemp.max + "°C";
+      }
+      if (agg.humidity) {
+        document.getElementById('agg-hum-min').textContent = agg.humidity.min + "%";
+        document.getElementById('agg-hum-avg').textContent = agg.humidity.avg + "%";
+        document.getElementById('agg-hum-max').textContent = agg.humidity.max + "%";
+      }
+    } catch (e) {
+      console.warn("Error parsing facility aggregate:", e);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  ALERTS FEED (Keep last 10)
+  // ─────────────────────────────────────────────────────────────────────────
+  function addAlert(alertArray, listElementId, rawMsg) {
+    const timeStr = new Date().toTimeString().split(' ')[0];
+    let severity = "WARNING";
+    let desc = rawMsg;
+
+    try {
+      const parsed = JSON.parse(rawMsg);
+      severity = parsed.severity || "WARNING";
+      const parts = [];
+      if (parsed.hr !== undefined) parts.push(`HR: ${parsed.hr} bpm`);
+      if (parsed.spo2 !== undefined) parts.push(`SpO2: ${parsed.spo2}%`);
+      if (parsed.temp !== undefined) parts.push(`Temp: ${parsed.temp}°C`);
+      if (parsed.roomTemp !== undefined) parts.push(`Room: ${parsed.roomTemp}°C`);
+      if (parsed.humidity !== undefined) parts.push(`Humidity: ${parsed.humidity}%`);
+      if (parsed.o2 !== undefined) parts.push(`O2: ${parsed.o2}%`);
+      if (parsed.message) parts.push(parsed.message);
+      if (parts.length > 0) desc = parts.join(" • ");
+    } catch (e) {
+      desc = rawMsg;
+    }
+
+    alertArray.unshift({ time: timeStr, severity: severity, text: desc });
+    if (alertArray.length > 10) alertArray.pop();
+
+    const listEl = document.getElementById(listElementId);
+    if (!listEl) return;
+
+    listEl.innerHTML = alertArray.map(item => `
+      <div class="alert-item ${item.severity === 'CRITICAL' ? 'crit' : 'warn'}">
+        <div class="alert-left">
+          <span class="alert-time">${item.time}</span>
+          <span class="alert-text">${item.text}</span>
+        </div>
+        <span class="pill ${item.severity === 'CRITICAL' ? 'badge-crit' : 'badge-warn'}">${item.severity}</span>
+      </div>
+    `).join('');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  COMMAND DISPATCHERS (Publish on slider release only)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // 1. Medication Rate Slider (0 - 100 mg/hr)
+  const medSlider = document.getElementById('slider-med-rate');
+  const medSliderLabel = document.getElementById('med-slider-label');
+
+  medSlider.addEventListener('mousedown', () => { isUserInteractingMed = true; });
+  medSlider.addEventListener('touchstart', () => { isUserInteractingMed = true; });
+  medSlider.addEventListener('input', () => {
+    isUserInteractingMed = true;
+    medSliderLabel.textContent = `${medSlider.value} mg/hr`;
+  });
+
+  const publishMedRate = () => {
+    const val = parseFloat(medSlider.value);
+    console.log(`Publishing med rate: ${val} to ${TOPIC_PREFIX}/cmd/medication/rate`);
+    client.publish(`${TOPIC_PREFIX}/cmd/medication/rate`, val.toString(), { qos: 1 });
+    if (val > 80) {
+      isMedPending = true;
+      document.getElementById("btn-med-confirm").classList.remove("hidden");
+      showToast(`High dosage (${val} mg/hr) exceeds critical limit (>80 mg/hr). Click CONFIRM button to activate!`, true);
+      medSliderLabel.textContent = `${val} mg/hr (PENDING)`;
+    } else {
+      isMedPending = false;
+      document.getElementById("btn-med-confirm").classList.add("hidden");
+    }
+    setTimeout(() => { isUserInteractingMed = false; }, 600);
+  };
+  medSlider.addEventListener('change', publishMedRate);
+
+  // Medication Confirm Button
+  function confirmMedication() {
+    console.log(`Publishing CONFIRM to ${TOPIC_PREFIX}/cmd/medication/confirm`);
+    client.publish(`${TOPIC_PREFIX}/cmd/medication/confirm`, "CONFIRM", { qos: 1 });
+    document.getElementById('btn-med-confirm').classList.add('hidden');
+    isMedPending = false;
+    showToast("Confirmation sent to device!", false);
+  }
+
+  // 2. Bed Elevation Slider (0 - 90 deg)
+  const bedSlider = document.getElementById('slider-bed-angle');
+  const bedSliderLabel = document.getElementById('bed-slider-label');
+
+  bedSlider.addEventListener('mousedown', () => { isUserInteractingBed = true; });
+  bedSlider.addEventListener('touchstart', () => { isUserInteractingBed = true; });
+  bedSlider.addEventListener('input', () => {
+    isUserInteractingBed = true;
+    bedSliderLabel.textContent = `${bedSlider.value}°`;
+  });
+
+  const publishBedAngle = () => {
+    const val = bedSlider.value;
+    console.log(`Publishing bed angle: ${val} to ${TOPIC_PREFIX}/cmd/bed/angle`);
+    client.publish(`${TOPIC_PREFIX}/cmd/bed/angle`, val.toString(), { qos: 1 });
+    showToast(`Bed target angle set to ${val}°`, false);
+    setTimeout(() => { isUserInteractingBed = false; }, 600);
+  };
+  bedSlider.addEventListener('change', publishBedAngle);
+
+  // Bed Preset Buttons
+  function sendBedPreset(preset) {
+    console.log(`Publishing bed preset ${preset} to ${TOPIC_PREFIX}/cmd/bed/preset`);
+    client.publish(`${TOPIC_PREFIX}/cmd/bed/preset`, preset, { qos: 1 });
+    const angleMap = { "SLEEP": 10, "EAT": 30, "BREATHE": 45, "EMERGENCY": 90 };
+    if (angleMap[preset] !== undefined) {
+      const a = angleMap[preset];
+      bedSlider.value = a;
+      bedSliderLabel.textContent = `${a}°`;
+      setBedAngleDisplay(a);
+      showToast(`Bed moving to ${preset} preset (${a}°)`, false);
+    }
+  }
+
+  // 3. Dynamic Sampling Rate Slider (5 - 60 sec)
+  const samplingSlider = document.getElementById('slider-sampling-rate');
+  const samplingSliderLabel = document.getElementById('sampling-slider-label');
+
+  samplingSlider.addEventListener('input', () => {
+    samplingSliderLabel.textContent = `${samplingSlider.value}s`;
+  });
+
+  const publishSamplingRate = () => {
+    const val = samplingSlider.value;
+    console.log(`Publishing sampling rate: ${val} to ${TOPIC_PREFIX}/cmd/sampling/rate`);
+    client.publish(`${TOPIC_PREFIX}/cmd/sampling/rate`, val.toString(), { qos: 1 });
+  };
+  const debouncedPublishSample = debounce(publishSamplingRate, 300);
+  samplingSlider.addEventListener('change', debouncedPublishSample);
+  samplingSlider.addEventListener('mouseup', publishSamplingRate);
+  samplingSlider.addEventListener('touchend', publishSamplingRate);
+
+  // Sampling Mode Toggle
+  function setSamplingMode(mode) {
+    console.log(`Publishing sampling mode ${mode} to ${TOPIC_PREFIX}/cmd/sampling/mode`);
+    client.publish(`${TOPIC_PREFIX}/cmd/sampling/mode`, mode, { qos: 1 });
+
+    const btnAuto = document.getElementById('btn-mode-auto');
+    const btnManual = document.getElementById('btn-mode-manual');
+    const badge = document.getElementById('sampling-info-badge');
+
+    if (mode === 'auto') {
+      btnAuto.classList.add('active');
+      btnManual.classList.remove('active');
+      badge.textContent = `${samplingSlider.value}s (AUTO)`;
+    } else {
+      btnManual.classList.add('active');
+      btnAuto.classList.remove('active');
+      badge.textContent = `${samplingSlider.value}s (MANUAL)`;
+    }
+  }
+</script>
+  <div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#f8fafc;padding:12px 20px;border-radius:8px;border:1px solid #475569;box-shadow:0 10px 25px rgba(0,0,0,0.6);font-size:0.85rem;font-weight:600;z-index:9999;display:none;pointer-events:none;"></div>
+</body>
+</html>

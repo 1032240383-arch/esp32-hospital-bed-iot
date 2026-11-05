@@ -1,0 +1,6 @@
+{
+  "workbench.editorAssociations": {
+    "diagram.json": "wokwi.editor",
+    "**/diagram.json": "wokwi.editor"
+  }
+}

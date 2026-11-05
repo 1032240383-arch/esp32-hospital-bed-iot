@@ -1,0 +1,19 @@
+.pio
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+__pycache__/
+*.pyc
+tools/__pycache__/
+tools/*.exe
+tools/*_bin
+
+# AWS certificates & private keys — NEVER commit
+certs/*.pem
+certs/*.key
+certs/*.crt
+certs/root-CA.crt
+
+# Build artifacts
+compile_commands.json

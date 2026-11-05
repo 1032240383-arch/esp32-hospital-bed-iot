@@ -1,0 +1,17 @@
+# Wokwi / Arduino library dependencies for ESP32 Healthcare IoT Monitor
+# One library per line.  Wokwi resolves the latest compatible version.
+# To pin a version add @x.y.z (e.g.  PubSubClient@2.8.0)
+
+# OLED display driver
+Adafruit SSD1306
+Adafruit GFX Library
+
+# Temperature / humidity sensor
+DHT sensor library
+Adafruit Unified Sensor
+
+# MQTT client
+PubSubClient
+
+# JSON serialization (MQTT payloads, status messages)
+ArduinoJson
